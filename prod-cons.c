@@ -22,19 +22,19 @@
 #include <math.h>
 #include <sys/types.h>
 
-#define QUEUESIZE 10
-#define LOOP 20
-#define num_threads 2
+#define QUEUESIZE 20
+#define LOOP 1000000
+#define num_threads 1024
 
 int producerthreads =0, consumerthreads = 0;
 
 void *producer (void *args);
 void *consumer (void *args);
-void * findSin(int arg);
-void * message(int arg );
-void * sq_root(int arg);
-void * intToHex(int arg);
-void * findLog(int arg);
+void *findSin(int arg);
+void *message(int arg );
+void *sq_root(int arg);
+void *intToHex(int arg);
+void *findLog(int arg);
 void *random_function(int i);
 
 typedef struct {
@@ -105,13 +105,14 @@ void *producer (void *q)
      // printf ("producer: queue FULL.\n");
       pthread_cond_wait (fifo->notFull, fifo->mut);
     }
+    producerthreads++;
 
     //printf("producerthreads %d\n",producerthreads);
     //printf("producerthreads/loop %d\n", producerthreads%LOOP);
     queueAdd (fifo, i);
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notEmpty);
-    producerthreads++;
+    // producerthreads++;
     //usleep (100000);
   }
   // for (i = 0; i < LOOP; i++) {
@@ -145,19 +146,19 @@ void *consumer (void *q)
     }
 
 
-    printf("consumerthreads %d\n", consumerthreads);
-    (*fifo->work[consumerthreads].work)(fifo->work[consumerthreads].arg);
+    // printf("consumerthreads %d\n", consumerthreads);
+    // (*fifo->work[consumerthreads].work)(fifo->work[consumerthreads].arg);
 
-    consumerthreads++;
+    // consumerthreads++;
     queueDel (fifo, &d);
-   // consumerthreads++;
+    consumerthreads++;
 
     
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notFull);
     
     // printf("consumerthreads %d\n", consumerthreads);
-    // (*fifo->work[consumerthreads-1].work)(fifo->work[consumerthreads-1].arg);
+    (*fifo->work[consumerthreads-1].work)(fifo->work[consumerthreads-1].arg);
 
 
     //printf ("consumer: recieved %d.\n", d);
@@ -226,10 +227,10 @@ void queueAdd (queue *q, int in)
   // printf("tail+in %d\n", q->tail+in);
   
   //pick a number based on the current addition to the queue
-  q->work[producerthreads].arg = (void*)q->tail+in;
+  q->work[producerthreads-1].arg = (void*)q->tail+in;
 
   //pick a random function 
-  q->work[producerthreads].work = random_function(q->tail);
+  q->work[producerthreads-1].work = random_function(q->tail);
   return;
 }
 
