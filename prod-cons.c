@@ -26,7 +26,7 @@
 #define LOOP 20
 #define num_threads 2
 
-int producerthreads =0;
+int producerthreads =0, consumerthreads = 0;
 
 void *producer (void *args);
 void *consumer (void *args);
@@ -97,18 +97,21 @@ void *producer (void *q)
 
   fifo = (queue *)q;
 
-  for (i = 0; i < LOOP; i++) {
+
+  //number of functions is divided in equal number of functions for each thread
+  for (i = 0; i < LOOP/num_threads; i++) {
     pthread_mutex_lock (fifo->mut);
     while (fifo->full) {
      // printf ("producer: queue FULL.\n");
       pthread_cond_wait (fifo->notFull, fifo->mut);
     }
-    producerthreads++;
+
     //printf("producerthreads %d\n",producerthreads);
     //printf("producerthreads/loop %d\n", producerthreads%LOOP);
     queueAdd (fifo, i);
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notEmpty);
+    producerthreads++;
     //usleep (100000);
   }
   // for (i = 0; i < LOOP; i++) {
@@ -129,19 +132,34 @@ void *consumer (void *q)
 {
   queue *fifo;
   int i, d;
-  pid_t tid = gettid();
+  //pid_t tid = gettid();
  // printf("my id is %d\n", tid);
   fifo = (queue *)q;
   //while (1) {  //it never ends
-  for (i = 0; i < LOOP; i++) {
+  //for (i = 0; i < LOOP; i++) {
+  for (i =0; i< LOOP/num_threads; i++) {
     pthread_mutex_lock (fifo->mut);
     while (fifo->empty) {
-      //printf ("consumer: queue EMPTY.\n");
+      printf ("consumer: queue EMPTY.\n");
       pthread_cond_wait (fifo->notEmpty, fifo->mut);
     }
+
+
+    printf("consumerthreads %d\n", consumerthreads);
+    (*fifo->work[consumerthreads].work)(fifo->work[consumerthreads].arg);
+
+    consumerthreads++;
     queueDel (fifo, &d);
+   // consumerthreads++;
+
+    
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notFull);
+    
+    // printf("consumerthreads %d\n", consumerthreads);
+    // (*fifo->work[consumerthreads-1].work)(fifo->work[consumerthreads-1].arg);
+
+
     //printf ("consumer: recieved %d.\n", d);
     //usleep(200000);
   }
@@ -160,15 +178,6 @@ void *consumer (void *q)
   return (NULL);
 }
 
-/*
-  typedef struct {
-  int buf[QUEUESIZE];
-  long head, tail;
-  int full, empty;
-  pthread_mutex_t *mut;
-  pthread_cond_t *notFull, *notEmpty;
-  } queue;
-*/
 
 queue *queueInit (void)
 {
@@ -211,16 +220,16 @@ void queueAdd (queue *q, int in)
   if (q->tail == q->head)
     q->full = 1;
   q->empty = 0;
-  // printf("producer %d\n", producerthreads);
+   printf("producer %d\n", producerthreads);
   // printf("producer/loop %d\n", producerthreads%LOOP);
 
   // printf("tail+in %d\n", q->tail+in);
   
   //pick a number based on the current addition to the queue
-  q->work[producerthreads%LOOP].arg = (void*)q->tail+in;
+  q->work[producerthreads].arg = (void*)q->tail+in;
 
   //pick a random function 
-  q->work[producerthreads%LOOP].work = random_function(q->tail);
+  q->work[producerthreads].work = random_function(q->tail);
   return;
 }
 
