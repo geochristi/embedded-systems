@@ -19,17 +19,28 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <math.h>
+#include <sys/types.h>
 
 #define QUEUESIZE 10
 #define LOOP 20
+#define num_threads 2
+
+int producerthreads =0;
 
 void *producer (void *args);
 void *consumer (void *args);
+void * findSin(int arg);
+void * message(int arg );
+void * sq_root(int arg);
+void * intToHex(int arg);
+void * findLog(int arg);
+void *random_function(int i);
 
-struct workFunction {
+typedef struct {
   void * (*work)(void *);
   void * arg;
-}
+} workFunction;
 
 typedef struct {
   int buf[QUEUESIZE];
@@ -37,6 +48,7 @@ typedef struct {
   int full, empty;
   pthread_mutex_t *mut;
   pthread_cond_t *notFull, *notEmpty;
+  workFunction work[LOOP];
 } queue;
 
 queue *queueInit (void);
@@ -46,18 +58,33 @@ void queueDel (queue *q, int *out);
 
 int main ()
 {
-  queue *fifo;
-  pthread_t pro, con;
+  queue *fifo;  
+  //pthread_t pro, con;  //intialize threads
+  pthread_t tidpro[num_threads], tidcon[num_threads]; 
 
-  fifo = queueInit ();
+  fifo = queueInit ();   // initialize queue
   if (fifo ==  NULL) {
     fprintf (stderr, "main: Queue Init failed.\n");
     exit (1);
   }
-  pthread_create (&pro, NULL, producer, fifo);
-  pthread_create (&con, NULL, consumer, fifo);
-  pthread_join (pro, NULL);
-  pthread_join (con, NULL);
+
+  for (int i=0; i<num_threads; i++) {
+    pthread_create(&tidpro[i], NULL, producer, fifo);
+    printf("Creating producer #%d\n", i);
+    pthread_create(&tidcon[i], NULL, consumer, fifo);
+    printf("Creating consumer #%d\n", i);
+  }
+
+
+  for(int i=0;i<num_threads;i++){
+    pthread_join(tidpro[i],NULL);
+
+    pthread_join(tidcon[i],NULL);
+  }
+  // pthread_create (&pro, NULL, producer, fifo);
+  // pthread_create (&con, NULL, consumer, fifo);
+  // pthread_join (pro, NULL);
+  // pthread_join (con, NULL);
   queueDelete (fifo);
 
   return 0;
@@ -73,25 +100,28 @@ void *producer (void *q)
   for (i = 0; i < LOOP; i++) {
     pthread_mutex_lock (fifo->mut);
     while (fifo->full) {
-      printf ("producer: queue FULL.\n");
+     // printf ("producer: queue FULL.\n");
       pthread_cond_wait (fifo->notFull, fifo->mut);
     }
+    producerthreads++;
+    //printf("producerthreads %d\n",producerthreads);
+    //printf("producerthreads/loop %d\n", producerthreads%LOOP);
     queueAdd (fifo, i);
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notEmpty);
-    usleep (100000);
+    //usleep (100000);
   }
-  for (i = 0; i < LOOP; i++) {
-    pthread_mutex_lock (fifo->mut);
-    while (fifo->full) {
-      printf ("producer: queue FULL.\n");
-      pthread_cond_wait (fifo->notFull, fifo->mut);
-    }
-    queueAdd (fifo, i);
-    pthread_mutex_unlock (fifo->mut);
-    pthread_cond_signal (fifo->notEmpty);
-    usleep (200000);
-  }
+  // for (i = 0; i < LOOP; i++) {
+  //   pthread_mutex_lock (fifo->mut);
+  //   while (fifo->full) {
+  //     printf ("producer: queue FULL.\n");
+  //     pthread_cond_wait (fifo->notFull, fifo->mut);
+  //   }
+  //   queueAdd (fifo, i);
+  //   pthread_mutex_unlock (fifo->mut);
+  //   pthread_cond_signal (fifo->notEmpty);
+  //   usleep (200000);
+  // }
   return (NULL);
 }
 
@@ -99,33 +129,34 @@ void *consumer (void *q)
 {
   queue *fifo;
   int i, d;
-
+  pid_t tid = gettid();
+ // printf("my id is %d\n", tid);
   fifo = (queue *)q;
-
+  //while (1) {  //it never ends
   for (i = 0; i < LOOP; i++) {
     pthread_mutex_lock (fifo->mut);
     while (fifo->empty) {
-      printf ("consumer: queue EMPTY.\n");
+      //printf ("consumer: queue EMPTY.\n");
       pthread_cond_wait (fifo->notEmpty, fifo->mut);
     }
     queueDel (fifo, &d);
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notFull);
-    printf ("consumer: recieved %d.\n", d);
-    usleep(200000);
+    //printf ("consumer: recieved %d.\n", d);
+    //usleep(200000);
   }
-  for (i = 0; i < LOOP; i++) {
-    pthread_mutex_lock (fifo->mut);
-    while (fifo->empty) {
-      printf ("consumer: queue EMPTY.\n");
-      pthread_cond_wait (fifo->notEmpty, fifo->mut);
-    }
-    queueDel (fifo, &d);
-    pthread_mutex_unlock (fifo->mut);
-    pthread_cond_signal (fifo->notFull);
-    printf ("consumer: recieved %d.\n", d);
-    usleep (50000);
-  }
+  // for (i = 0; i < LOOP; i++) {
+  //   pthread_mutex_lock (fifo->mut);
+  //   while (fifo->empty) {
+  //     printf ("consumer: queue EMPTY.\n");
+  //     pthread_cond_wait (fifo->notEmpty, fifo->mut);
+  //   }
+  //   queueDel (fifo, &d);
+  //   pthread_mutex_unlock (fifo->mut);
+  //   pthread_cond_signal (fifo->notFull);
+  //   printf ("consumer: recieved %d.\n", d);
+  //   usleep (50000);
+  // }
   return (NULL);
 }
 
@@ -180,7 +211,16 @@ void queueAdd (queue *q, int in)
   if (q->tail == q->head)
     q->full = 1;
   q->empty = 0;
+  // printf("producer %d\n", producerthreads);
+  // printf("producer/loop %d\n", producerthreads%LOOP);
 
+  // printf("tail+in %d\n", q->tail+in);
+  
+  //pick a number based on the current addition to the queue
+  q->work[producerthreads%LOOP].arg = (void*)q->tail+in;
+
+  //pick a random function 
+  q->work[producerthreads%LOOP].work = random_function(q->tail);
   return;
 }
 
@@ -197,3 +237,47 @@ void queueDel (queue *q, int *out)
 
   return;
 }
+
+
+void * findSin(int arg) {   
+  double g;
+  double k = (double)arg/(LOOP*QUEUESIZE);
+  for(int i=0;i<arg;i++){
+    g = sin(k) + g;
+  }
+  //printf("\nThe Sine is %f\n",g);
+}
+void * message(int arg ) {
+   //printf("\nHello from function 'message'  \n");
+}
+void * sq_root(int arg) {
+  //printf("the square root of %d is %f",arg,sqrt(arg));
+  // /printf("\n");
+}
+void * intToHex(int arg) {
+  //printf("\nThe number %d, turned to hexadecimal is: %x\n", arg,arg);
+}
+void * findLog(int arg) {
+  //printf("\nlog2 of %d is %f\n",arg, (double)log2(arg));  
+}
+
+void *random_function(int i){
+  
+  if (i%5==0){
+    if(i%2 == 0) {
+      return &findSin;
+    } else {
+      return &message;
+    }
+ } else {
+    if(i%2 ==0){
+      if(i%3 ==0 ){
+        return &sq_root;
+      } else {
+        return &intToHex;
+      }
+    } else {
+      return &findLog;
+    }
+  }
+} 
