@@ -21,12 +21,17 @@
 #include <stdlib.h>
 #include <math.h>
 #include <sys/types.h>
+#include <sys/time.h>
 
 #define QUEUESIZE 20
-#define LOOP 1000000
-#define num_threads 1024
+#define LOOP 10000 //number of repeats
+#define num_threads 256 //number of threads 
+#define title "times200_6_2048.txt"
 
-int producerthreads =0, consumerthreads = 0;
+int num_producers =0, num_consumers = 0;  //number of producer and consumer functions created by all threads
+struct timeval t1[LOOP], t2[LOOP];
+double time_for_txt[LOOP];
+
 
 void *producer (void *args);
 void *consumer (void *args);
@@ -48,7 +53,7 @@ typedef struct {
   int full, empty;
   pthread_mutex_t *mut;
   pthread_cond_t *notFull, *notEmpty;
-  workFunction work[LOOP];
+  workFunction work[LOOP];  //
 } queue;
 
 queue *queueInit (void);
@@ -59,15 +64,14 @@ void queueDel (queue *q, int *out);
 int main ()
 {
   queue *fifo;  
-  //pthread_t pro, con;  //intialize threads
-  pthread_t tidpro[num_threads], tidcon[num_threads]; 
-
+  pthread_t tidpro[num_threads], tidcon[num_threads]; //intialize threads
   fifo = queueInit ();   // initialize queue
   if (fifo ==  NULL) {
     fprintf (stderr, "main: Queue Init failed.\n");
     exit (1);
   }
 
+  //Creation of #num_threads new threads to execute producer and consumer functions
   for (int i=0; i<num_threads; i++) {
     pthread_create(&tidpro[i], NULL, producer, fifo);
     printf("Creating producer #%d\n", i);
@@ -75,21 +79,31 @@ int main ()
     printf("Creating consumer #%d\n", i);
   }
 
-
+  //terminate the threads
   for(int i=0;i<num_threads;i++){
     pthread_join(tidpro[i],NULL);
-
     pthread_join(tidcon[i],NULL);
   }
-  // pthread_create (&pro, NULL, producer, fifo);
-  // pthread_create (&con, NULL, consumer, fifo);
-  // pthread_join (pro, NULL);
-  // pthread_join (con, NULL);
-  queueDelete (fifo);
+  /*
+    FILE *f = fopen(title, "w");
+    if (f == NULL) {
+      printf("Error opening file!\n");
+      exit(1);
+    }
+    for (int i=0; i<num_consumers;i++){
+      fprintf(f,"%f\n", time_for_txt[i]);
+
+    }
+  */
+
+  queueDelete (fifo); // delete queue
 
   return 0;
 }
 
+/* function producer
+    Generates data and writes it to the queue 
+*/
 void *producer (void *q)
 {
   queue *fifo;
@@ -97,85 +111,90 @@ void *producer (void *q)
 
   fifo = (queue *)q;
 
-
-  //number of functions is divided in equal number of functions for each thread
+  //number of functions is divided in equal number of executions for each thread
   for (i = 0; i < LOOP/num_threads; i++) {
+    
     pthread_mutex_lock (fifo->mut);
+    
     while (fifo->full) {
-     // printf ("producer: queue FULL.\n");
+      //printf ("producer: queue FULL.\n");
       pthread_cond_wait (fifo->notFull, fifo->mut);
     }
-    producerthreads++;
 
-    //printf("producerthreads %d\n",producerthreads);
-    //printf("producerthreads/loop %d\n", producerthreads%LOOP);
+    num_producers++;
+
     queueAdd (fifo, i);
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notEmpty);
-    // producerthreads++;
-    //usleep (100000);
   }
-  // for (i = 0; i < LOOP; i++) {
-  //   pthread_mutex_lock (fifo->mut);
-  //   while (fifo->full) {
-  //     printf ("producer: queue FULL.\n");
-  //     pthread_cond_wait (fifo->notFull, fifo->mut);
-  //   }
-  //   queueAdd (fifo, i);
-  //   pthread_mutex_unlock (fifo->mut);
-  //   pthread_cond_signal (fifo->notEmpty);
-  //   usleep (200000);
-  // }
+  /*for (i = 0; i < LOOP; i++) {
+    pthread_mutex_lock (fifo->mut);
+    while (fifo->full) {
+      printf ("producer: queue FULL.\n");
+      pthread_cond_wait (fifo->notFull, fifo->mut);
+    }
+    queueAdd (fifo, i);
+    pthread_mutex_unlock (fifo->mut);
+    pthread_cond_signal (fifo->notEmpty);
+    usleep (200000);
+  }*/
+  
   return (NULL);
 }
 
+/* function producer
+    Reads the data from the queue, times the communication, executes the function 
+    that has been stored in the queue and then removes them. 
+*/
 void *consumer (void *q)
 {
   queue *fifo;
   int i, d;
-  //pid_t tid = gettid();
- // printf("my id is %d\n", tid);
+  float t_elapsed[LOOP];
+
   fifo = (queue *)q;
-  //while (1) {  //it never ends
-  //for (i = 0; i < LOOP; i++) {
-  for (i =0; i< LOOP/num_threads; i++) {
+
+  while (1) {  
     pthread_mutex_lock (fifo->mut);
+
     while (fifo->empty) {
-      printf ("consumer: queue EMPTY.\n");
+      //printf ("consumer: queue EMPTY.\n");
       pthread_cond_wait (fifo->notEmpty, fifo->mut);
     }
 
+    //gets the time between the adding of the data and reading them from the queue
+    
+    gettimeofday(&t2[num_consumers], NULL);
+    t_elapsed[num_consumers] = (double) ((t2[num_consumers].tv_usec - t1[num_consumers].tv_usec)/1.0e6 + t2[num_consumers].tv_sec - t1[num_consumers].tv_sec);
+    //printf("Time for the communication #%i is %f s\n",num_consumers,  t_elapsed[num_consumers]);
 
-    // printf("consumerthreads %d\n", consumerthreads);
-    // (*fifo->work[consumerthreads].work)(fifo->work[consumerthreads].arg);
+    time_for_txt[num_consumers] = t_elapsed[num_consumers];
+    //execution of the selected function
+    (*fifo->work[num_consumers].work)(fifo->work[num_consumers].arg);
 
-    // consumerthreads++;
+
     queueDel (fifo, &d);
-    consumerthreads++;
-
+    
+    num_consumers++;
     
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notFull);
     
-    // printf("consumerthreads %d\n", consumerthreads);
-    (*fifo->work[consumerthreads-1].work)(fifo->work[consumerthreads-1].arg);
-
-
-    //printf ("consumer: recieved %d.\n", d);
-    //usleep(200000);
   }
-  // for (i = 0; i < LOOP; i++) {
-  //   pthread_mutex_lock (fifo->mut);
-  //   while (fifo->empty) {
-  //     printf ("consumer: queue EMPTY.\n");
-  //     pthread_cond_wait (fifo->notEmpty, fifo->mut);
-  //   }
-  //   queueDel (fifo, &d);
-  //   pthread_mutex_unlock (fifo->mut);
-  //   pthread_cond_signal (fifo->notFull);
-  //   printf ("consumer: recieved %d.\n", d);
-  //   usleep (50000);
-  // }
+  /*  for (i = 0; i < LOOP; i++) {
+      pthread_mutex_lock (fifo->mut);
+      while (fifo->empty) {
+        printf ("consumer: queue EMPTY.\n");
+        pthread_cond_wait (fifo->notEmpty, fifo->mut);
+      }
+      queueDel (fifo, &d);
+      pthread_mutex_unlock (fifo->mut);
+      pthread_cond_signal (fifo->notFull);
+      printf ("consumer: recieved %d.\n", d);
+      usleep (50000);
+  }
+  */
+  
   return (NULL);
 }
 
@@ -221,16 +240,14 @@ void queueAdd (queue *q, int in)
   if (q->tail == q->head)
     q->full = 1;
   q->empty = 0;
-   printf("producer %d\n", producerthreads);
-  // printf("producer/loop %d\n", producerthreads%LOOP);
-
-  // printf("tail+in %d\n", q->tail+in);
   
   //pick a number based on the current addition to the queue
-  q->work[producerthreads-1].arg = (void*)q->tail+in;
+  gettimeofday(&t1[num_producers-1], NULL);
+  q->work[num_producers-1].arg = (void*)q->tail+in;
 
   //pick a random function 
-  q->work[producerthreads-1].work = random_function(q->tail);
+  q->work[num_producers-1].work = random_function(q->tail);
+
   return;
 }
 
@@ -250,11 +267,7 @@ void queueDel (queue *q, int *out)
 
 
 void * findSin(int arg) {   
-  double g;
-  double k = (double)arg/(LOOP*QUEUESIZE);
-  for(int i=0;i<arg;i++){
-    g = sin(k) + g;
-  }
+  double g = (double)arg/rand();
   //printf("\nThe Sine is %f\n",g);
 }
 void * message(int arg ) {
