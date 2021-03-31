@@ -24,13 +24,15 @@
 #include <sys/time.h>
 
 #define QUEUESIZE 20
-#define LOOP 10000 //number of repeats
-#define num_threads 256 //number of threads 
-#define title "times200_6_2048.txt"
+#define LOOP 1000000 //number of repeats
+#define num_threads 2048 //number of threads 
+//#define title "times200_6_2048.txt"
 
 int num_producers =0, num_consumers = 0;  //number of producer and consumer functions created by all threads
 struct timeval t1[LOOP], t2[LOOP];
 double time_for_txt[LOOP];
+  float t_elapsed[LOOP];
+
 
 
 void *producer (void *args);
@@ -53,7 +55,7 @@ typedef struct {
   int full, empty;
   pthread_mutex_t *mut;
   pthread_cond_t *notFull, *notEmpty;
-  workFunction work[LOOP];  //
+  workFunction work[QUEUESIZE];  //
 } queue;
 
 queue *queueInit (void);
@@ -150,11 +152,12 @@ void *consumer (void *q)
 {
   queue *fifo;
   int i, d;
-  float t_elapsed[LOOP];
+  // float t_elapsed[LOOP];
 
   fifo = (queue *)q;
 
   while (1) {  
+    //srand(time(NULL));
     pthread_mutex_lock (fifo->mut);
 
     while (fifo->empty) {
@@ -164,13 +167,13 @@ void *consumer (void *q)
 
     //gets the time between the adding of the data and reading them from the queue
     
-    gettimeofday(&t2[num_consumers], NULL);
-    t_elapsed[num_consumers] = (double) ((t2[num_consumers].tv_usec - t1[num_consumers].tv_usec)/1.0e6 + t2[num_consumers].tv_sec - t1[num_consumers].tv_sec);
-    //printf("Time for the communication #%i is %f s\n",num_consumers,  t_elapsed[num_consumers]);
+    // gettimeofday(&t2[num_consumers], NULL);
+    // t_elapsed[num_consumers] = (double) ((t2[num_consumers].tv_usec - t1[num_consumers].tv_usec)/1.0e6 + t2[num_consumers].tv_sec - t1[num_consumers].tv_sec);
+    // printf("Time for the communication #%i is %f s\n",num_consumers,  t_elapsed[num_consumers]);
 
-    time_for_txt[num_consumers] = t_elapsed[num_consumers];
+    //time_for_txt[num_consumers] = t_elapsed[num_consumers];
     //execution of the selected function
-    (*fifo->work[num_consumers].work)(fifo->work[num_consumers].arg);
+    //(*fifo->work[num_consumers].work)(fifo->work[num_consumers].arg);
 
 
     queueDel (fifo, &d);
@@ -233,7 +236,16 @@ void queueDelete (queue *q)
 
 void queueAdd (queue *q, int in)
 {
+  //starting timer
+  gettimeofday(&t1[num_producers-1], NULL);
+
   q->buf[q->tail] = in;
+
+   //pick a number based on the current addition to the queue
+  q->work[q->tail].arg = (void*)q->tail+in;
+    //pick a random function 
+  q->work[q->tail].work = random_function(q->tail);
+
   q->tail++;
   if (q->tail == QUEUESIZE)
     q->tail = 0;
@@ -241,27 +253,33 @@ void queueAdd (queue *q, int in)
     q->full = 1;
   q->empty = 0;
   
-  //pick a number based on the current addition to the queue
-  gettimeofday(&t1[num_producers-1], NULL);
-  q->work[num_producers-1].arg = (void*)q->tail+in;
-
-  //pick a random function 
-  q->work[num_producers-1].work = random_function(q->tail);
-
+  /*
+  //q->work[num_producers-1].arg = (void*)q->tail+in;
+  
+  // q->work[num_producers-1].work = random_function(q->tail);
+  */
   return;
 }
 
 void queueDel (queue *q, int *out)
 {
+  
   *out = q->buf[q->head];
 
+  gettimeofday(&t2[num_consumers], NULL);
+  t_elapsed[num_consumers] = (double) ((t2[num_consumers].tv_usec - t1[num_consumers].tv_usec)/1.0e6 + t2[num_consumers].tv_sec - t1[num_consumers].tv_sec);
+  printf("Time for the communication #%i is %f s\n",num_consumers,  t_elapsed[num_consumers]);
+ 
+  //execution of the selected function
+
+  (q->work[q->head].work)(q->work[q->head].arg);
+  
   q->head++;
   if (q->head == QUEUESIZE)
     q->head = 0;
   if (q->head == q->tail)
     q->empty = 1;
   q->full = 0;
-
   return;
 }
 
